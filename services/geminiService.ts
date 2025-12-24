@@ -3,21 +3,15 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, GenerationOptions, TypoStyle, VisualStyle } from "../types";
 import { SYSTEM_PROMPT_TEMPLATE } from "../constants";
 
-// Helper to get client safely with support for Vite env vars
-const getAiClient = () => {
-  let apiKey = process.env.API_KEY;
+// Helper to get client safely with support for passed key or env var
+const getAiClient = (apiKey?: string) => {
+  const finalKey = apiKey || process.env.API_KEY;
 
-  // Fallback: Try to read from Vite's import.meta.env if process.env.API_KEY is missing
-  // This helps in environments like Cloudflare Pages where process.env might be polyfilled to empty
-  if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env) {
-    apiKey = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY;
+  if (!finalKey) {
+    console.error("API Key is missing. Please set API_KEY in your environment variables or provide it via settings.");
+    throw new Error("未检测到 API Key。请在设置中配置您的 Key，或登录以使用系统 Key。");
   }
-
-  if (!apiKey) {
-    console.error("API Key is missing. Please set VITE_API_KEY or API_KEY in your environment variables.");
-    throw new Error("未检测到 API Key。请在部署环境配置 VITE_API_KEY 或 API_KEY。");
-  }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: finalKey });
 };
 
 // Robust JSON extractor
@@ -43,7 +37,7 @@ const cleanJsonString = (text: string): string => {
   return clean;
 };
 
-export const analyzeImage = async (base64Images: string[], productDesc: string): Promise<AnalysisResult> => {
+export const analyzeImage = async (base64Images: string[], productDesc: string, apiKey?: string): Promise<AnalysisResult> => {
   // Use Gemini 3 Flash Preview for text/multimodal analysis
   const model = "gemini-3-flash-preview";
 
@@ -61,7 +55,7 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
   `;
 
   try {
-    const ai = getAiClient();
+    const ai = getAiClient(apiKey);
     
     // Create image parts for all uploaded images
     const imageParts = base64Images.map(imgData => ({
@@ -117,7 +111,7 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
   }
 };
 
-export const analyzeText = async (productDesc: string): Promise<AnalysisResult> => {
+export const analyzeText = async (productDesc: string, apiKey?: string): Promise<AnalysisResult> => {
     const model = "gemini-3-flash-preview";
   
     const prompt = `
@@ -134,7 +128,7 @@ export const analyzeText = async (productDesc: string): Promise<AnalysisResult> 
     `;
   
     try {
-      const ai = getAiClient();
+      const ai = getAiClient(apiKey);
       const response = await ai.models.generateContent({
         model: model,
         contents: prompt,
@@ -178,7 +172,8 @@ export const generatePrompts = async (
   analysis: AnalysisResult,
   style: VisualStyle,
   typo: TypoStyle,
-  options: GenerationOptions
+  options: GenerationOptions,
+  apiKey?: string
 ): Promise<string> => {
   const model = "gemini-3-flash-preview";
 
@@ -210,7 +205,7 @@ export const generatePrompts = async (
     .replace('{{ASPECT_RATIO}}', options.aspectRatio);
 
   try {
-    const ai = getAiClient();
+    const ai = getAiClient(apiKey);
     const response = await ai.models.generateContent({
       model: model,
       contents: finalPrompt,
@@ -226,7 +221,8 @@ export const generatePrompts = async (
 export const generateImageFromPrompt = async (
   prompt: string,
   referenceImages: string[],
-  aspectRatio: string
+  aspectRatio: string,
+  apiKey?: string
 ): Promise<string> => {
   const model = "gemini-2.5-flash-image";
 
@@ -248,7 +244,7 @@ export const generateImageFromPrompt = async (
   }));
 
   try {
-    const ai = getAiClient();
+    const ai = getAiClient(apiKey);
     const response = await ai.models.generateContent({
       model: model,
       contents: {
