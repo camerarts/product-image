@@ -3,8 +3,15 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, GenerationOptions, TypoStyle, VisualStyle } from "../types";
 import { SYSTEM_PROMPT_TEMPLATE } from "../constants";
 
-// Initialize Gemini Client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Helper to get client safely
+const getAiClient = () => {
+  // Use a fallback or check to prevent crashing if process.env.API_KEY is undefined during build/init
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.warn("API Key not found in process.env.API_KEY. Calls may fail.");
+  }
+  return new GoogleGenAI({ apiKey: apiKey || '' });
+};
 
 // Helper to clean JSON string from markdown formatting
 const cleanJsonString = (text: string): string => {
@@ -37,10 +44,12 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
   `;
 
   try {
+    const ai = getAiClient();
+    
     // Create image parts for all uploaded images
     const imageParts = base64Images.map(imgData => ({
       inlineData: {
-        mimeType: "image/jpeg", // Assuming JPEG for simplicity, though detecting from source would be better. Gemini is often tolerant.
+        mimeType: "image/jpeg", // Assuming JPEG for simplicity
         data: imgData
       }
     }));
@@ -80,7 +89,7 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
       return JSON.parse(cleanText) as AnalysisResult;
     } catch (parseError) {
       console.error("JSON Parse Error:", parseError);
-      console.error("Raw Text:", text.slice(0, 500) + "..."); // Log first 500 chars for debug
+      console.error("Raw Text:", text.slice(0, 500) + "..."); 
       throw new Error("Failed to parse analysis results. Please try again.");
     }
 
@@ -91,7 +100,6 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
 };
 
 export const analyzeText = async (productDesc: string): Promise<AnalysisResult> => {
-    // Updated model to a valid preview model
     const model = "gemini-3-flash-preview";
   
     const prompt = `
@@ -108,6 +116,7 @@ export const analyzeText = async (productDesc: string): Promise<AnalysisResult> 
     `;
   
     try {
+      const ai = getAiClient();
       const response = await ai.models.generateContent({
         model: model,
         contents: prompt,
@@ -153,7 +162,6 @@ export const generatePrompts = async (
   typo: TypoStyle,
   options: GenerationOptions
 ): Promise<string> => {
-  // Updated model to a valid preview model
   const model = "gemini-3-flash-preview";
 
   // Construct the Analysis Report string
@@ -184,6 +192,7 @@ export const generatePrompts = async (
     .replace('{{ASPECT_RATIO}}', options.aspectRatio);
 
   try {
+    const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: model,
       contents: finalPrompt,
@@ -201,19 +210,15 @@ export const generateImageFromPrompt = async (
   referenceImages: string[],
   aspectRatio: string
 ): Promise<string> => {
-  // Use gemini-2.5-flash-image for generation/editing as per instructions
   const model = "gemini-2.5-flash-image";
 
-  // Map user aspect ratio to supported API values if necessary
-  // API supports: "1:1", "3:4", "4:3", "9:16", "16:9"
-  // App supports: '1:1', '16:9', '9:16', '3:4', '4:3', '2:3', '3:2'
   let validRatio = "1:1";
   if (["1:1", "3:4", "4:3", "9:16", "16:9"].includes(aspectRatio)) {
     validRatio = aspectRatio;
   } else if (aspectRatio === '2:3') {
-    validRatio = '3:4'; // Approximation
+    validRatio = '3:4'; 
   } else if (aspectRatio === '3:2') {
-    validRatio = '4:3'; // Approximation
+    validRatio = '4:3'; 
   }
 
   // Create image parts from reference images
@@ -225,6 +230,7 @@ export const generateImageFromPrompt = async (
   }));
 
   try {
+    const ai = getAiClient();
     const response = await ai.models.generateContent({
       model: model,
       contents: {
