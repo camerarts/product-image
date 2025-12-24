@@ -7,7 +7,7 @@ import PromptCard from './components/PromptCard';
 import { VISUAL_STYLES, TYPO_STYLES } from './constants';
 import { AnalysisResult, AppStep, GenerationOptions, TypoStyle, VisualStyle, ParsedPrompt } from './types';
 import { analyzeImage, analyzeText, generatePrompts, generateImageFromPrompt } from './services/geminiService';
-import { Upload, Loader2, Wand2, ArrowRight, FileText, Image as ImageIcon, Key, CheckCircle2, X, ChevronDown, Lock, LogIn, LogOut, User, Settings } from 'lucide-react';
+import { Upload, Loader2, Wand2, ArrowRight, FileText, Image as ImageIcon, Key, CheckCircle2, X, ChevronDown, Lock, LogIn, LogOut, User, Settings, Save } from 'lucide-react';
 
 const App: React.FC = () => {
   // State
@@ -18,10 +18,13 @@ const App: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
 
-  // Auth State
+  // Auth & Settings State
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [userApiKey, setUserApiKey] = useState(() => localStorage.getItem('user_gemini_key') || '');
+  const [tempApiKey, setTempApiKey] = useState('');
 
   // Set default Visual Style to "Minimalist Nordic" (id: minimalist)
   const [selectedStyle, setSelectedStyle] = useState<VisualStyle | null>(
@@ -96,6 +99,13 @@ const App: React.FC = () => {
     };
   }, [selectedImages]); // Re-bind when selectedImages changes to check length correctly
 
+  // Init tempApiKey from userApiKey when opening modal
+  useEffect(() => {
+    if (showSettingsModal) {
+      setTempApiKey(userApiKey);
+    }
+  }, [showSettingsModal, userApiKey]);
+
   // Handlers
   const handleLogin = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -106,6 +116,13 @@ const App: React.FC = () => {
     } else {
       alert("密码错误");
     }
+  };
+
+  const handleSaveSettings = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setUserApiKey(tempApiKey);
+    localStorage.setItem('user_gemini_key', tempApiKey);
+    setShowSettingsModal(false);
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -130,9 +147,20 @@ const App: React.FC = () => {
     setSelectedImages(prev => prev.filter((_, index) => index !== indexToRemove));
   };
 
+  // Logic to determine API Key to use
+  // Returns string (User Key), undefined (Use Env/Backend Key), or null (No key available)
+  const getEffectiveApiKey = (): string | undefined | null => {
+    if (userApiKey && userApiKey.trim() !== '') return userApiKey;
+    if (isLoggedIn) return undefined; // Let service fallback to process.env.API_KEY
+    return null; // Guest + No User Key
+  };
+
   const handleAnalyze = async () => {
-    if (!isLoggedIn) {
-      setShowLoginModal(true);
+    const effectiveKey = getEffectiveApiKey();
+    if (effectiveKey === null) {
+      // Guest with no key
+      alert("非登录状态下，请先配置您的 API Key");
+      setShowSettingsModal(true);
       return;
     }
 
@@ -151,7 +179,8 @@ const App: React.FC = () => {
       // Combine brand name into description for context
       const combinedDesc = brandName ? `品牌名称: ${brandName}. ${productDesc}` : productDesc;
       
-      result = await analyzeImage(base64Images, combinedDesc);
+      // Pass effectiveKey (undefined means use backend env)
+      result = await analyzeImage(base64Images, combinedDesc, effectiveKey);
       
       // Override brand name if user input exists
       if (brandName.trim()) {
@@ -206,8 +235,10 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (!isLoggedIn) {
-      setShowLoginModal(true);
+    const effectiveKey = getEffectiveApiKey();
+    if (effectiveKey === null) {
+      alert("非登录状态下，请先配置您的 API Key");
+      setShowSettingsModal(true);
       return;
     }
 
@@ -216,7 +247,7 @@ const App: React.FC = () => {
     setIsGenerating(true);
     setParsedPrompts([]); // Clear previous
     try {
-      const result = await generatePrompts(analysisResult, selectedStyle, selectedTypo, options);
+      const result = await generatePrompts(analysisResult, selectedStyle, selectedTypo, options, effectiveKey);
       const prompts = parsePrompts(result);
       if (prompts.length === 0) {
         // Fallback if parsing fails or text is unstructured, create one "Raw" prompt
@@ -241,8 +272,10 @@ const App: React.FC = () => {
   };
 
   const handleGenerateImage = async (promptId: number) => {
-    if (!isLoggedIn) {
-      setShowLoginModal(true);
+    const effectiveKey = getEffectiveApiKey();
+    if (effectiveKey === null) {
+      alert("非登录状态下，请先配置您的 API Key");
+      setShowSettingsModal(true);
       return;
     }
 
@@ -260,7 +293,7 @@ const App: React.FC = () => {
       // Use the english prompt + styling info
       const fullPrompt = `${prompt.englishPrompt} -- Style: ${selectedStyle?.name}`;
       
-      const imageBase64 = await generateImageFromPrompt(fullPrompt, base64Images, options.aspectRatio);
+      const imageBase64 = await generateImageFromPrompt(fullPrompt, base64Images, options.aspectRatio, effectiveKey);
       
       setParsedPrompts(prev => prev.map(p => p.id === promptId ? { ...p, generatedImage: imageBase64 } : p));
     } catch (e: any) {
@@ -311,6 +344,52 @@ const App: React.FC = () => {
             
             <button 
               onClick={() => setShowLoginModal(false)}
+              className="mt-6 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm transform transition-all scale-100">
+            <div className="flex flex-col items-center mb-6">
+              <div className="bg-gray-100 p-3 rounded-full mb-4">
+                <Settings className="text-gray-600" size={24} />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">API 配置</h2>
+              <p className="text-xs text-gray-500 mt-2 text-center">配置您自己的 Google Gemini API Key</p>
+            </div>
+            
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={tempApiKey}
+                  onChange={(e) => setTempApiKey(e.target.value)}
+                  placeholder="Paste your API Key here..."
+                  className="w-full pl-4 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-500 focus:border-transparent outline-none text-sm transition-all"
+                  autoFocus
+                />
+              </div>
+              <p className="text-[10px] text-gray-400 text-center">
+                 您的 Key 仅存储在本地浏览器中
+              </p>
+              
+              <button
+                type="submit"
+                className="w-full py-3 bg-gray-900 text-white font-bold rounded-xl shadow-lg hover:bg-gray-800 active:scale-[0.98] transition-all text-sm flex items-center justify-center gap-2"
+              >
+                <Save size={16} />
+                保存配置
+              </button>
+            </form>
+            
+            <button 
+              onClick={() => setShowSettingsModal(false)}
               className="mt-6 text-xs text-gray-400 hover:text-gray-600 w-full text-center"
             >
               取消
@@ -640,9 +719,12 @@ const App: React.FC = () => {
             生成效果方案预览
           </h2>
           <div className="flex gap-3">
-             <button className="flex items-center gap-2 px-4 py-2 text-xs font-medium border border-gray-300 rounded-full hover:bg-gray-50 transition-colors">
+             <button 
+               onClick={() => setShowSettingsModal(true)}
+               className={`flex items-center gap-2 px-4 py-2 text-xs font-medium border rounded-full transition-colors ${userApiKey ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'border-gray-300 hover:bg-gray-50'}`}
+             >
                <Settings size={14} />
-               配置
+               {userApiKey ? 'Key 已配置' : '配置'}
              </button>
              
              {!isLoggedIn ? (
