@@ -3,31 +3,48 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { AnalysisResult, GenerationOptions, TypoStyle, VisualStyle } from "../types";
 import { SYSTEM_PROMPT_TEMPLATE } from "../constants";
 
-// Helper to get client safely
+// Helper to get client safely with support for Vite env vars
 const getAiClient = () => {
-  // Use a fallback or check to prevent crashing if process.env.API_KEY is undefined during build/init
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.warn("API Key not found in process.env.API_KEY. Calls may fail.");
+  let apiKey = process.env.API_KEY;
+
+  // Fallback: Try to read from Vite's import.meta.env if process.env.API_KEY is missing
+  // This helps in environments like Cloudflare Pages where process.env might be polyfilled to empty
+  if (!apiKey && typeof import.meta !== 'undefined' && import.meta.env) {
+    apiKey = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY;
   }
-  return new GoogleGenAI({ apiKey: apiKey || '' });
+
+  if (!apiKey) {
+    console.error("API Key is missing. Please set VITE_API_KEY or API_KEY in your environment variables.");
+    throw new Error("未检测到 API Key。请在部署环境配置 VITE_API_KEY 或 API_KEY。");
+  }
+  return new GoogleGenAI({ apiKey });
 };
 
-// Helper to clean JSON string from markdown formatting
+// Robust JSON extractor
 const cleanJsonString = (text: string): string => {
   if (!text) return "{}";
+  
+  // 1. Try to find the first '{' and last '}'
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  
+  if (start !== -1 && end !== -1 && end > start) {
+    return text.substring(start, end + 1);
+  }
+  
+  // 2. Fallback: standard cleanup
   let clean = text.trim();
-  // Remove markdown code blocks if present
   if (clean.startsWith("```json")) {
     clean = clean.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
   } else if (clean.startsWith("```")) {
     clean = clean.replace(/^```\s*/i, "").replace(/\s*```$/, "");
   }
+  
   return clean;
 };
 
 export const analyzeImage = async (base64Images: string[], productDesc: string): Promise<AnalysisResult> => {
-  // Updated model to a valid preview model from the documentation
+  // Use Gemini 3 Flash Preview for text/multimodal analysis
   const model = "gemini-3-flash-preview";
 
   const prompt = `
@@ -49,7 +66,7 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
     // Create image parts for all uploaded images
     const imageParts = base64Images.map(imgData => ({
       inlineData: {
-        mimeType: "image/jpeg", // Assuming JPEG for simplicity
+        mimeType: "image/jpeg", 
         data: imgData
       }
     }));
@@ -81,7 +98,7 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
 
     const text = response.text;
     if (!text) {
-      throw new Error("Empty response from AI");
+      throw new Error("AI 返回内容为空");
     }
 
     try {
@@ -89,13 +106,14 @@ export const analyzeImage = async (base64Images: string[], productDesc: string):
       return JSON.parse(cleanText) as AnalysisResult;
     } catch (parseError) {
       console.error("JSON Parse Error:", parseError);
-      console.error("Raw Text:", text.slice(0, 500) + "..."); 
-      throw new Error("Failed to parse analysis results. Please try again.");
+      console.error("Raw Text:", text); 
+      throw new Error("解析 AI 返回数据失败，请重试");
     }
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Analysis failed:", error);
-    throw error;
+    // Re-throw with a clear message
+    throw new Error(error.message || "分析请求失败");
   }
 };
 
@@ -139,7 +157,7 @@ export const analyzeText = async (productDesc: string): Promise<AnalysisResult> 
   
       const text = response.text;
       if (!text) {
-        throw new Error("Empty response from AI");
+        throw new Error("AI 返回内容为空");
       }
 
       try {
@@ -147,12 +165,12 @@ export const analyzeText = async (productDesc: string): Promise<AnalysisResult> 
         return JSON.parse(cleanText) as AnalysisResult;
       } catch (parseError) {
         console.error("JSON Parse Error:", parseError);
-        throw new Error("Failed to parse text analysis results.");
+        throw new Error("解析文本分析结果失败");
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Text Analysis failed:", error);
-      throw error;
+      throw new Error(error.message || "文本分析失败");
     }
   };
 
@@ -198,10 +216,10 @@ export const generatePrompts = async (
       contents: finalPrompt,
     });
     
-    return response.text || "Generating failed.";
-  } catch (error) {
+    return response.text || "生成内容为空，请重试";
+  } catch (error: any) {
     console.error("Prompt generation failed:", error);
-    throw error;
+    throw new Error(error.message || "提示词生成失败");
   }
 };
 
@@ -252,9 +270,9 @@ export const generateImageFromPrompt = async (
       }
     }
     
-    throw new Error("No image generated");
-  } catch (error) {
+    throw new Error("未生成有效的图片数据");
+  } catch (error: any) {
     console.error("Image generation failed:", error);
-    throw error;
+    throw new Error(error.message || "图片生成失败");
   }
 };
