@@ -159,9 +159,10 @@ const App: React.FC = () => {
       }
       
       setAnalysisResult(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('分析失败，请检查 API Key 或重试');
+      // Show specific error message
+      alert(`分析失败: ${e.message}`);
     } finally {
       setIsAnalyzing(false);
     }
@@ -231,9 +232,9 @@ const App: React.FC = () => {
       } else {
         setParsedPrompts(prompts);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert('生成失败');
+      alert(`生成失败: ${e.message}`);
     } finally {
       setIsGenerating(false);
     }
@@ -262,9 +263,9 @@ const App: React.FC = () => {
       const imageBase64 = await generateImageFromPrompt(fullPrompt, base64Images, options.aspectRatio);
       
       setParsedPrompts(prev => prev.map(p => p.id === promptId ? { ...p, generatedImage: imageBase64 } : p));
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("图片生成失败，请重试");
+      alert(`图片生成失败: ${e.message}`);
     } finally {
       setParsedPrompts(prev => prev.map(p => p.id === promptId ? { ...p, isGenerating: false } : p));
     }
