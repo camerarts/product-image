@@ -1,0 +1,8 @@
+{
+  "name": "KV Visual Architect",
+  "description": "A professional AI tool to generate complete e-commerce visual system prompts based on product analysis.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
