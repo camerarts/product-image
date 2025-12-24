@@ -43,9 +43,33 @@ export interface ParsedPrompt {
   isGenerating: boolean;
 }
 
-export enum AppStep {
-  ANALYSIS = 1,
-  VISUAL_STYLE = 2,
-  TYPOGRAPHY = 3,
-  GENERATION = 4
+export const AppStep = {
+  ANALYSIS: 1,
+  VISUAL_STYLE: 2,
+  TYPOGRAPHY: 3,
+  GENERATION: 4
+} as const;
+
+export type AppStep = typeof AppStep[keyof typeof AppStep];
+
+// --- Auth & Admin Types ---
+
+export type UserRole = 'admin' | 'user';
+
+export interface User {
+  id: string;
+  username: string;
+  role: UserRole;
+  status: 'active' | 'disabled';
+  registeredAt: string;
+}
+
+export interface ActivationKey {
+  id: string;
+  key: string;
+  status: 'unused' | 'used';
+  generatedBy: string; // admin username
+  generatedAt: string;
+  usedBy?: string; // username who used it
+  usedAt?: string;
 }
